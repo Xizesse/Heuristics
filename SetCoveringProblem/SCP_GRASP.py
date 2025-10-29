@@ -222,4 +222,84 @@ def grasp_parallel_fixed_RCL(instance, desired_RCL=10, max_time=900.0, num_iter=
 
 
 
+def grasp_single_run_BI_fixed_RCL(instance, desired_RCL=10, max_time=30.0, seed=None):
+    """
+    Performs one GRASP iteration (randomized construction + Best Improvement local search).
+    Uses a fixed RCL size based on desired_RCL parameter.
+    Designed for parallel execution.
+    """
+    # Compute alpha dynamically so RCL has approximately desired_RCL elements
+    alpha = min(1.0, desired_RCL / instance.n)
+
+    if seed is not None:
+        random.seed(seed)
+
+    # 1️⃣ Construct a randomized solution
+    sol = greedy_randomized_adaptive(instance, alpha=alpha, seed=random.randint(0, 1_000_000))
+    # 2️⃣ Apply Best Improvement local search
+    sol = best_improvement_drop_or_swap_loop(sol, max_time=max_time)
+    # 3️⃣ Redundancy elimination
+    sol.prune_by_cost()
+
+    return sol
+
+
+def grasp_parallel_BI_fixed_RCL(instance, desired_RCL=10, max_time=900.0, num_iter=20, num_workers=4, seed=42):
+    """
+    Parallel GRASP (Best Improvement + Fixed RCL version) for the Set Covering Problem.
+
+    Parameters
+    ----------
+    instance : SCPInstance
+        Problem instance.
+    desired_RCL : int
+        Target number of elements in the Restricted Candidate List (controls alpha adaptively).
+    max_time : float
+        Total runtime budget (seconds).
+    num_iter : int
+        Number of independent GRASP runs.
+    num_workers : int
+        Number of parallel processes (typically <= number of CPU cores).
+    seed : int
+        Base random seed for reproducibility.
+    """
+    random.seed(seed)
+    best_sol = None
+    best_cost = float("inf")
+    start = time.time()
+
+    # Split available time among all runs to avoid total overrun
+    per_run_time = max_time / num_iter
+
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        futures = [
+            executor.submit(
+                grasp_single_run_BI_fixed_RCL,
+                instance,
+                desired_RCL,
+                per_run_time,
+                random.randint(0, 1_000_000)
+            )
+            for _ in range(num_iter)
+        ]
+
+        for i, f in enumerate(as_completed(futures)):
+            sol = f.result()
+            if sol.cost < best_cost:
+                best_cost = sol.cost
+                best_sol = sol
+            # Optional: print live progress
+            # print(f"[{i+1}/{num_iter}] Completed with cost {sol.cost:.2f}")
+
+    elapsed = time.time() - start
+    opt = getattr(instance, "opt_value", None)
+    if opt:
+        dev = 100 * (best_cost - opt) / opt
+        print(f"✅ GRASP-BI-FixedRCL [{instance.name}] best cost={best_cost:.2f} "
+              f"(dev={dev:+.2f}%) in {elapsed:.2f}s using {num_workers} workers.")
+    else:
+        print(f"✅ GRASP-BI-FixedRCL [{instance.name}] best cost={best_cost:.2f} "
+              f"in {elapsed:.2f}s using {num_workers} workers.")
+
+    return best_sol
 

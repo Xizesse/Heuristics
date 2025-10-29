@@ -131,12 +131,12 @@ class SCPSolution:
         """
         Initialize an empty solution for a given SCPInstance.
         """
-        self.instance = instance  # reference to the problem data
-        self.selected = set()     # chosen airplanes (indices)
-        self.covered = np.zeros(instance.m, dtype=int)  # coverage count per attribute
+        self.instance = instance
+        self.selected = set()
+        self.covered = np.zeros(instance.m, dtype=int)
+        self.uncovered_count = instance.m
         self.cost = 0.0
 
-        # Pre-cache for speed
         self.costs = np.asarray(instance.costs)
         self.attr_of_set = instance.attr_of_set
 
@@ -185,27 +185,28 @@ class SCPSolution:
               f"{len(sol.selected)} sets, feasible={sol.is_feasible()}, cost={sol.cost:.2f}")
         return sol
 
-    def add(self, j: int) -> None:
-        """Select airplane j and update coverage and cost."""
+    def add(self, j):
         if j in self.selected:
             return
         self.selected.add(j)
         self.cost += self.costs[j]
         for a in self.attr_of_set[j]:
+            if self.covered[a] == 0:
+                self.uncovered_count -= 1
             self.covered[a] += 1
 
-    def remove(self, j: int) -> None:
-        """Remove airplane j and update coverage and cost."""
+    def remove(self, j):
         if j not in self.selected:
             return
         self.selected.remove(j)
         self.cost -= self.costs[j]
         for a in self.attr_of_set[j]:
             self.covered[a] -= 1
+            if self.covered[a] == 0:
+                self.uncovered_count += 1
 
-    def is_feasible(self) -> bool:
-        """Return True if all attributes are covered at least once."""
-        return np.all(self.covered > 0)
+    def is_feasible(self):
+        return self.uncovered_count == 0
 
     def uncovered_attributes(self) -> list[int]:
         """Return list of uncovered attribute indices."""
@@ -222,6 +223,7 @@ class SCPSolution:
             if any(self.covered[a] == 1 for a in self.attr_of_set[j]):
                 continue
             self.remove(j)
+            
 
     def rebuild_from_selected(self):
         """
@@ -236,11 +238,11 @@ class SCPSolution:
                 self.covered[a] += 1
         return self
 
-    def copy(self) -> "SCPSolution":
-        """Return a deep copy of the current solution."""
+    def copy(self):
         new_sol = SCPSolution(self.instance)
         new_sol.selected = self.selected.copy()
         new_sol.covered = self.covered.copy()
+        new_sol.uncovered_count = self.uncovered_count
         new_sol.cost = self.cost
         return new_sol
 

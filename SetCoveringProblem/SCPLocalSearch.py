@@ -5,147 +5,124 @@ from SCPConstructive import *
 
 def best_improvement1x1(sol, max_time=10.0):
     """
-    Single-pass Best Improvement Local Search (1x1 swap) for the SCP.
-
-    Explores all possible 1x1 swaps:
-      - Remove one selected set (s)
-      - Add one non-selected set (t)
-    Keeps the best improving solution found (if any).
-    Runs only one full neighborhood exploration, not iterative loops.
+    Optimized Best Improvement Local Search (1x1 swap) for SCP.
+    Identical behavior to original version, but avoids excessive copying.
     """
-    start_time = time.time()
+    start = time.time()
     inst = sol.instance
     n = inst.n
 
-    best_sol = sol.copy()
     best_cost = sol.cost
+    best_s, best_t = None, None
     current = sol.copy()
 
-    # Explore all possible swaps
-    for s in list(current.selected):
-        current.remove(s)  # temporarily remove
+    selected_list = list(current.selected)
+    non_selected_list = [t for t in range(n) if t not in current.selected]
 
-        for t in range(n):
-            if time.time() - start_time > max_time:
-                break  # stop if timeout reached
+    for s in selected_list:
+        if time.time() - start > max_time:
+            break
+        current.remove(s)
+
+        for t in non_selected_list:
+            if time.time() - start > max_time:
+                break
             if t in current.selected:
                 continue
 
             current.add(t)
-            if current.is_feasible():
-                new_cost = current.cost
-                if new_cost < best_cost:
-                    best_sol = current.copy()
-                    best_cost = new_cost
+            if current.is_feasible() and current.cost < best_cost:
+                best_cost = current.cost
+                best_s, best_t = s, t
             current.remove(t)
 
-        current.add(s)  # restore before next s
+        current.add(s)
 
-    return best_sol
+    if best_s is not None:
+        improved = sol.copy()
+        improved.remove(best_s)
+        if best_t is not None:
+            improved.add(best_t)
+        return improved
+    return sol.copy()
+
 
 
 def best_improvement_1x1_loop(sol, max_time=30.0):
     """
     Repeated Best Improvement Local Search Loop.
-    
-    Calls a single-pass local search repeatedly until:
-      - No improvement is found (local optimum)
-      - Or time limit is reached.
     """
-    start_time = time.time()
+    start = time.time()
     current = sol.copy()
-    best = current.copy()
 
-    while time.time() - start_time < max_time:
-        elapsed = time.time() - start_time
-        remaining = max_time - elapsed
-
-        # run one neighborhood exploration
+    while time.time() - start < max_time:
+        remaining = max_time - (time.time() - start)
         new_sol = best_improvement1x1(current, max_time=remaining)
 
         if new_sol.cost < current.cost:
-            #print(f"Improvement found ({current.cost:.2f} → {new_sol.cost:.2f})")
-            current = new_sol.copy()
-            best = current.copy()
-            #print(f"Improved to cost {best.cost:.2f}")
+            current = new_sol
         else:
-            break  # no improvement found
+            break  # local optimum
+    return current
 
-    return best
 
 
 
 
 def first_improvement1x1(sol, max_time=10.0):
     """
-    Single-pass First Improvement Local Search (1x1 swap) for the SCP.
-
-    Explores all (s, t) swaps:
-      - Remove one selected set (s)
-      - Add one non-selected set (t)
-    As soon as a feasible improving swap is found, it returns that new solution.
-    If no improvement is found after exploring all swaps, returns the same solution.
+    Optimized First Improvement Local Search (1x1 swap).
+    Stops at first improving feasible move.
     """
-    start_time = time.time()
+    start = time.time()
     inst = sol.instance
     n = inst.n
 
     current = sol.copy()
     base_cost = current.cost
 
-    # Explore all possible swaps
-    for s in list(current.selected):
-        current.remove(s)  # temporarily remove
+    selected_list = list(current.selected)
+    non_selected_list = [t for t in range(n) if t not in current.selected]
 
-        for t in range(n):
-            if time.time() - start_time > max_time:
+    for s in selected_list:
+        if time.time() - start > max_time:
+            break
+        current.remove(s)
+
+        for t in non_selected_list:
+            if time.time() - start > max_time:
                 break
             if t in current.selected:
                 continue
 
             current.add(t)
-            if current.is_feasible():
-                new_cost = current.cost
-                if new_cost < base_cost:
-                    # Found first improving feasible swap
-                    improved_sol = current.copy()
-                    return improved_sol
+            if current.is_feasible() and current.cost < base_cost:
+                improved = current.copy()
+                return improved
             current.remove(t)
 
-        current.add(s)  # restore before next s
-
-    # No improvement found
+        current.add(s)
     return sol.copy()
+
 
 
 def first_improvement_1x1_loop(sol, max_time=30.0):
     """
-    Repeated First Improvement Local Search Loop.
-    
-    Repeatedly applies single-pass First Improvement 1x1 swaps until:
-      - No further improvement is found (local optimum)
-      - Or time limit is reached.
+    Repeated First Improvement 1x1 swaps until local optimum or time limit.
     """
-    start_time = time.time()
+    start = time.time()
     current = sol.copy()
-    best = current.copy()
-    iteration = 0
 
-    while time.time() - start_time < max_time:
-        iteration += 1
-        remaining = max(1e-6, max_time - (time.time() - start_time))
-
-        # Run one neighborhood exploration (stops at first improvement)
+    while time.time() - start < max_time:
+        remaining = max_time - (time.time() - start)
         new_sol = first_improvement1x1(current, max_time=remaining)
 
         if new_sol.cost < current.cost:
-            #print(f"Improvement found ({current.cost:.2f} → {new_sol.cost:.2f})")
-            current = new_sol.copy()
-            best = current.copy()
+            current = new_sol
         else:
-            break  # local optimum reached
+            break
+    return current
 
-    return best
 
 
 
@@ -203,56 +180,51 @@ def randomized_plus_BI1x1(instance, alpha=0.1, seed=42, ls_time=999.0):
 
 def best_improvement_drop_or_swap(sol, max_time=10.0):
     """
-    Single-pass Best Improvement Local Search (1x0 + 1x1) for the SCP.
-
-    Neighborhood:
-      - 1x0 (drop): remove one selected set if solution remains feasible.
-      - 1x1 (swap): remove one selected set, add one non-selected set.
-
-    Keeps the best improving feasible move (if any).
-    Returns the improved solution, or the original if no improvement found.
+    Best Improvement (1x0 + 1x1) neighborhood.
+    Drop or swap, single pass.
     """
-    start_time = time.time()
+    start = time.time()
     inst = sol.instance
     n = inst.n
 
-    best_sol = sol.copy()
     best_cost = sol.cost
+    best_s, best_t = None, None
     current = sol.copy()
 
-    # Explore all possible removals and swaps
-    for s in list(current.selected):
-        current.remove(s)  # temporarily remove
+    selected_list = list(current.selected)
+    non_selected_list = [t for t in range(n) if t not in current.selected]
 
-        # --- 1x0 removal ---
-        if current.is_feasible():
-            new_cost = current.cost
-            if new_cost < best_cost:
-                best_sol = current.copy()
-                best_cost = new_cost
+    for s in selected_list:
+        if time.time() - start > max_time:
+            break
+        current.remove(s)
 
-        # --- 1x1 swaps ---
-        for t in range(n):
-            if time.time() - start_time > max_time:
+        # 1x0 removal
+        if current.is_feasible() and current.cost < best_cost:
+            best_cost, best_s, best_t = current.cost, s, None
+
+        # 1x1 swaps
+        for t in non_selected_list:
+            if time.time() - start > max_time:
                 break
             if t in current.selected:
                 continue
 
             current.add(t)
-            if current.is_feasible():
-                new_cost = current.cost
-                if new_cost < best_cost:
-                    best_sol = current.copy()
-                    best_cost = new_cost
+            if current.is_feasible() and current.cost < best_cost:
+                best_cost, best_s, best_t = current.cost, s, t
             current.remove(t)
 
-        # Restore before next s
         current.add(s)
 
-        if time.time() - start_time > max_time:
-            break
+    if best_s is not None:
+        improved = sol.copy()
+        improved.remove(best_s)
+        if best_t is not None:
+            improved.add(best_t)
+        return improved
+    return sol.copy()
 
-    return best_sol
 
 
 def best_improvement_drop_or_swap_loop(sol, max_time=30.0):
@@ -276,8 +248,8 @@ def best_improvement_drop_or_swap_loop(sol, max_time=30.0):
 
         if new_sol.cost < current.cost:
             #print(f"Improvement found ({current.cost:.2f} → {new_sol.cost:.2f})")
-            current = new_sol.copy()
-            best = current.copy()
+            current = new_sol
+            best = current  
             #print(f"Improved to cost {best.cost:.2f}")
         else:
             break  # no improvement found
@@ -285,12 +257,11 @@ def best_improvement_drop_or_swap_loop(sol, max_time=30.0):
     return best
 
 
+import random
+
 def first_improvement_drop_or_swap(sol, max_time=10.0):
     """
-    First Improvement (unbiased within each s):
-      - Shuffle order of s
-      - For each s, shuffle [None] + non_selected so drop vs swap is unbiased
-      - Return at first improving feasible move
+    First Improvement (drop or swap, randomized order).
     """
     start = time.time()
     inst = sol.instance
@@ -301,73 +272,49 @@ def first_improvement_drop_or_swap(sol, max_time=10.0):
 
     selected_list = list(current.selected)
     random.shuffle(selected_list)
-
-    # Precompute non-selected once (relative to the current solution)
-    non_selected_list = [i for i in range(n) if i not in current.selected]
+    non_selected_list = [t for t in range(n) if t not in current.selected]
 
     for s in selected_list:
         if time.time() - start > max_time:
             break
-        if s not in current.selected:   # defensive (in case of external changes)
-            continue
+        current.remove(s)
 
-        # Build unbiased candidate list for this s: drop (None) + all swaps
+        # unbiased candidate order: None (drop) + swaps
         candidates = [None] + non_selected_list[:]
         random.shuffle(candidates)
-
-        # Temporarily remove s (we'll restore after trying candidates)
-        current.remove(s)
 
         for t in candidates:
             if time.time() - start > max_time:
                 break
-
             if t is not None:
-                if t in current.selected:   # should not happen, but be safe
+                if t in current.selected:
                     continue
                 current.add(t)
 
             if current.is_feasible() and current.cost < base_cost:
-                return current.copy()   # first improvement found
+                improved = current.copy()
+                return improved
 
             if t is not None:
                 current.remove(t)
-
-        # restore s before moving to the next s
         current.add(s)
-
-    # No improvement found in this pass
     return sol.copy()
 
 
 def first_improvement_drop_or_swap_loop(sol, max_time=30.0):
-    """
-    Repeated randomized FI loop.
-    Runs successive randomized passes until no improvement or time limit.
-    """
-    start_time = time.time()
+    start = time.time()
     current = sol.copy()
-    best = current.copy()
-    iteration = 0
 
-    while time.time() - start_time < max_time:
-        iteration += 1
-        remaining = max_time - (time.time() - start_time)
+    while time.time() - start < max_time:
+        remaining = max_time - (time.time() - start)
         new_sol = first_improvement_drop_or_swap(current, max_time=remaining)
 
         if new_sol.cost < current.cost:
-            current = new_sol.copy()
-            best = current.copy()
+            current = new_sol
         else:
-            break  # local optimum
+            break
+    return current
 
-    return best
-
-
-def greedy_plus_RE(instance):
-    sol = greedy_cost_efficiency(instance)
-    sol.prune_by_cost()
-    return sol
 
 def greedy_plus_FI_drop_or_swap(instance, fi_time=999.0):
     sol = greedy_cost_efficiency(instance)
