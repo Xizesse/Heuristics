@@ -383,7 +383,7 @@ def greedy_RE_BI1X1(instance, ls_time=999.0):
     sol = best_improvement_1x1_loop(sol, max_time=ls_time)
     return sol
 
-def greedy_plus_FI1x1(instance, fi_time=999.0):
+def greedy_RE_FI1x1(instance, fi_time=999.0):
     sol = greedy_cost_efficiency(instance)
     sol.prune_by_cost()
     sol = first_improvement_1x1_loop(sol, max_time=fi_time)
