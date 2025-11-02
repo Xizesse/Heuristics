@@ -156,7 +156,9 @@ def _run_single_instance(i, filename, folder, algorithm_name, solver_func, *args
 # ============================================================
 
 def solve_all_instances_parallel(algorithm_name, csv_filename, folder="SCP-Instances",
-                                 num_instances=0, num_workers=4, *args, **kwargs):
+                                 num_instances=0, num_workers=4,
+                                 total_walltime=None,   # NEW: overall wall-time budget (seconds)
+                                 *args, **kwargs):
     """
     Parallel version of solve_all_instances.
     Runs each SCP instance in a separate process using ProcessPoolExecutor.
@@ -202,6 +204,17 @@ def solve_all_instances_parallel(algorithm_name, csv_filename, folder="SCP-Insta
     if num_instances > 0:
         files = files[:num_instances]
     total_instances = len(files)
+
+    import math
+
+    # --- Derive per-instance time if total_walltime specified ---
+    if total_walltime is not None:
+        num_batches = math.ceil(total_instances / num_workers)
+        per_instance_time = total_walltime / num_batches
+        print(f"[⏱] Dividing total_walltime={total_walltime:.1f}s "
+            f"→ {per_instance_time:.1f}s per instance (≈ {per_instance_time/60:.1f} min)")
+        kwargs["max_time"] = per_instance_time
+
 
     print(f"Solver (parallel): {algorithm_name} using {num_workers} workers")
     start_all = time.time()

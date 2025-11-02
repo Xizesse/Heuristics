@@ -177,7 +177,6 @@ def tabu_search_core(instance,
     if opt <= 0:
         opt = best.cost
 
-    # small helper for relative deviation
     def deviation(cost):
         return max(0, 100 * (cost - opt) / opt)
 
@@ -260,3 +259,108 @@ def tabu_search(instance,
                             shake_intensity=shake_intensity,
                             verbose=verbose)
 
+
+def reactive_tabu_search_core(instance,
+                              init_sol,
+                              max_time=60.0,
+                              tabu_tenure_init=10,
+                              tabu_tenure_min=3,
+                              tabu_tenure_max=40,
+                              max_no_improve=100,
+                              alpha=1.0,
+                              shake_intensity=0.1,
+                              verbose=True):
+    start_time = time.time()
+    current = init_sol.copy()
+    current.prune_by_cost()
+    best = current.copy()
+
+    iteration = 0
+    tabu_tenure = tabu_tenure_init
+    tabu_list = {}
+    seen = {}  # solution signature → iteration last seen
+    cycles_recent = 0
+    no_improve_total = 0
+
+    def signature(sol):
+        return hash(tuple(sorted(sol.selected)))
+
+    opt = getattr(instance, "opt_value", best.cost)
+    if opt <= 0: opt = best.cost
+    deviation = lambda c: max(0, 100*(c - opt)/opt)
+
+    if verbose:
+        print(f"\n▶️ Reactive Tabu start | init={best.cost:.2f} (dev={deviation(best.cost):.2f}%)")
+    while time.time() - start_time < max_time and no_improve_total < max_no_improve:
+        iteration += 1
+
+        best_neighbor, best_move = _get_neighbors(current, instance, tabu_list, iteration, best, alpha)
+        if best_neighbor is None:
+            no_improve_total += 1
+            continue
+
+        current, tabu_list = _apply_move(best_neighbor, best_move, tabu_list, iteration, tabu_tenure)
+
+        sig = signature(current)
+        if sig in seen:
+            cycle_len = iteration - seen[sig]
+            if cycle_len < 20:  # small cycle detected
+                tabu_tenure = min(tabu_tenure_max, int(tabu_tenure * 1.25) + 1)
+                cycles_recent += 1
+                if verbose:
+                    print(f"↻ Cycle detected (len={cycle_len}) → increase tenure → {tabu_tenure}")
+            else:
+                cycles_recent = max(0, cycles_recent - 1)
+        else:
+            tabu_tenure = max(tabu_tenure_min, int(tabu_tenure * 0.95))
+        seen[sig] = iteration
+
+        # --- improvement ---
+        if current.cost < best.cost:
+            best = current.copy()
+            no_improve_total = 0
+            cycles_recent = max(0, cycles_recent - 1)
+            tabu_tenure = max(tabu_tenure_min, int(tabu_tenure * 0.9))  # gentle cooling
+            if verbose:
+                print(f"[Iter {iteration:3d}] NEW BEST {best.cost:.2f} "
+                      f"(dev={deviation(best.cost):.2f}%) | tenure={tabu_tenure}")
+            # intensify a bit
+            best = best_improvement_drop_or_swap_loop(best, max_time=5.0)
+            current = best.copy()
+        else:
+            no_improve_total += 1
+
+        # --- hard diversification trigger ---
+        if cycles_recent >= 5 or no_improve_total >= 30:
+            intensity = min(0.5, shake_intensity * (1 + cycles_recent / 5))
+            if verbose:
+                print(f"⚡ Reactive shake triggered at iter {iteration}, intensity={intensity:.2f}")
+            current = _shake_solution(best, intensity=intensity, verbose=verbose)
+            current.prune_by_cost()
+            cycles_recent = 0
+            no_improve_total = 0
+    if verbose:
+        print(f"\n✅ Finished after {iteration} iters | "
+              f"Best={best.cost:.2f} (dev={deviation(best.cost):.2f}%)\n")
+    return best
+
+def reactive_tabu_search(instance,
+                         max_time=60.0,
+                         tabu_tenure_init=10,
+                         tabu_tenure_min=3,
+                         tabu_tenure_max=40,
+                         max_no_improve=100,
+                         alpha=1.0,
+                         shake_intensity=0.1,
+                         verbose=True):
+    init_sol = greedy_cost_efficiency(instance)
+    init_sol.prune_by_cost()
+    return reactive_tabu_search_core(instance, init_sol,
+                                     max_time=max_time,
+                                     tabu_tenure_init=tabu_tenure_init,
+                                     tabu_tenure_min=tabu_tenure_min,
+                                     tabu_tenure_max=tabu_tenure_max,
+                                     max_no_improve=max_no_improve,
+                                     alpha=alpha,
+                                     shake_intensity=shake_intensity,
+                                     verbose=verbose)
