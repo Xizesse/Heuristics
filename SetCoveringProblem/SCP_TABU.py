@@ -267,7 +267,7 @@ def reactive_tabu_search_core(instance,
                               tabu_tenure_min=3,
                               tabu_tenure_max=40,
                               max_no_improve=100,
-                              alpha=1.0,
+                              alpha=0.9,
                               shake_intensity=0.1,
                               verbose=True):
     start_time = time.time()

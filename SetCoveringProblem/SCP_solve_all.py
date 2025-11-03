@@ -12,17 +12,17 @@ from SCP_GRASP import *
 # ============================================================
 
 def solve_all_instances(algorithm_name, csv_filename, folder="SCP-Instances",
-                        num_instances=0, *args, **kwargs):
+                        num_instances=0,
+                        total_walltime=None,     # NEW: overall time budget
+                        *args, **kwargs):
     """
-    Runs the given solver across all SCP instances and saves results to 'results/'.
-
-    Works with either:
-      - algorithm_name = 'string_name'
-      - algorithm_name = function reference
-
-    Produces a CSV with performance metrics and prints summary stats.
+    Runs the given solver sequentially across all SCP instances
+    and saves results to 'results/'.
+    
+    - Supports total_walltime: divides total time among instances.
+    - Produces CSV and summary (same format as parallel version).
     """
-    import sys
+    import sys, math
 
     # --- Resolve solver function robustly ---
     if callable(algorithm_name):
@@ -50,11 +50,19 @@ def solve_all_instances(algorithm_name, csv_filename, folder="SCP-Instances",
         files = files[:num_instances]
     total_instances = len(files)
 
+    # --- Derive per-instance time if total_walltime specified ---
+    if total_walltime is not None and total_instances > 0:
+        per_instance_time = total_walltime / total_instances
+        print(f"[⏱] Dividing total_walltime={total_walltime:.1f}s "
+              f"→ {per_instance_time:.1f}s per instance "
+              f"(≈ {per_instance_time/60:.1f} min)")
+        kwargs["max_time"] = per_instance_time
+
     results = []
-    print(f"Solver: {algorithm_name}")
+    print(f"Solver (sequential): {algorithm_name}")
     start_all = time.time()
 
-    # --- Loop through instances sequentially ---
+    # --- Sequential loop over instances ---
     for i, _ in enumerate(files, start=1):
         inst = SCPInstance(i - 1, folder=folder)
         opt = inst.opt_value if inst.opt_value is not None else 0
@@ -64,6 +72,8 @@ def solve_all_instances(algorithm_name, csv_filename, folder="SCP-Instances",
         elapsed = time.time() - t0
 
         cost = getattr(sol, "cost", None)
+        deviation = round(100 * (cost - opt) / opt, 2) if opt and cost is not None else None
+
         selected_sets = getattr(sol, "selected", None)
         if selected_sets is not None:
             if isinstance(selected_sets, (set, list)):
@@ -72,8 +82,6 @@ def solve_all_instances(algorithm_name, csv_filename, folder="SCP-Instances",
                 solution_str = str(selected_sets)
         else:
             solution_str = ""
-
-        deviation = round(100 * (cost - opt) / opt, 2) if opt and cost is not None else None
 
         results.append({
             "instance_name": inst.name,
@@ -85,17 +93,18 @@ def solve_all_instances(algorithm_name, csv_filename, folder="SCP-Instances",
             "solution_sets": solution_str
         })
 
-        sys.stdout.write(f"\rInstance {i}/{total_instances}")
+        sys.stdout.write(f"\rCompleted {i}/{total_instances}")
         sys.stdout.flush()
 
     print()
     df = pd.DataFrame(results)
     df.to_csv(csv_path, index=False)
 
-    # --- Summary statistics ---
-    valid_devs = [r["deviation_%"] for r in results if r["deviation_%"] is not None]
-    valid_times = [r["time_sec"] for r in results if r["time_sec"] is not None]
-    valid_opts = [r for r in results if r["opt_value"] and r["solution_cost"] is not None]
+    # --- Compute summary stats (same as parallel version) ---
+    valid_results = [r for r in results if "error" not in r]
+    valid_devs = [r["deviation_%"] for r in valid_results if r["deviation_%"] is not None]
+    valid_times = [r["time_sec"] for r in valid_results if r["time_sec"] is not None]
+    valid_opts = [r for r in valid_results if r["opt_value"] and r["solution_cost"] is not None]
 
     avg_dev = round(sum(valid_devs) / len(valid_devs), 2) if valid_devs else None
     min_dev = round(min(valid_devs), 2) if valid_devs else None
@@ -106,18 +115,19 @@ def solve_all_instances(algorithm_name, csv_filename, folder="SCP-Instances",
     avg_time = sum(valid_times) / len(valid_times) if valid_times else 0
     total_time = time.time() - start_all
 
-    print("\n==== Summary ====")
+    print("\n==== Sequential Summary ====")
     print(f"Solver: {algorithm_name}")
-    print(f"Average deviation from optimum : {avg_dev:+.2f}%")
-    print(f"Minimum deviation              : {min_dev:+.2f}%")
-    print(f"Maximum deviation              : {max_dev:+.2f}%")
+    print(f"Average deviation from optimum : {avg_dev:+.2f}%" if avg_dev is not None else "N/A")
+    print(f"Minimum deviation              : {min_dev:+.2f}%" if min_dev is not None else "N/A")
+    print(f"Maximum deviation              : {max_dev:+.2f}%" if max_dev is not None else "N/A")
     print(f"Optimal solutions found        : {num_opt_found}/{total_instances}")
     print(f"Time [fastest, slowest]        : {fastest_time:.2f}s , {slowest_time:.2f}s")
     print(f"Average time per instance      : {avg_time:.2f}s")
     print(f"Total elapsed time             : {total_time:.2f}s")
-    print("==================")
+    print("=============================")
 
     return df
+
 
 
 # ============================================================
